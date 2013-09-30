@@ -289,6 +289,30 @@ sub retry {
     });
 }
 
+sub while {
+    my ($self, $predicate, $f) = @_;
+
+    my $weaken_loop;
+    my $cv_bound = AE::cv;
+    my $loop = sub {
+        my @v = @_;
+        $predicate->(@v)
+            ? $f->(@v)->flat_map( sub {
+                $weaken_loop->(@_);
+                cv_unit;
+            })->catch(sub {
+                $cv_bound->croak($@);
+                cv_unit;
+            })
+            : $cv_bound->send(@v);
+        return;
+    };
+    Scalar::Util::weaken($weaken_loop = $loop);
+
+    $self->flat_map($loop);
+    $cv_bound;
+}
+
 1;
 
 __END__
